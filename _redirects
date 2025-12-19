@@ -1,0 +1,5 @@
+# 将 /daily/2025-01-06 这样的路径重定向到 daily.html?date=2025-01-06
+/daily/:date  /daily.html?date=:date  200
+
+# SPA 回退到首页（未匹配的路径）
+/*  /index.html  200

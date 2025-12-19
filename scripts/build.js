@@ -77,7 +77,8 @@ const rootFiles = [
   'styles.css',
   'main.js',
   'daily.js',
-  'sw.js'
+  'sw.js',
+  '_redirects'
 ];
 for (const f of rootFiles) {
   const src = path.join(root, f);
