@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<!--
+  文件: index.html
+  描述: 积分奖励系统（Web版）首页，包含“角色/任务/奖励/日历”四个页签与弹窗。
+  技术: 使用 Vue 3（CDN）+ 本地存储 localStorage + 简单 Service Worker。
+-->
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>积分奖励系统</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' ry='12' fill='%232563eb'/%3E%3Ctext x='50%25' y='50%25' dy='.35em' text-anchor='middle' font-size='40' fill='white'%3EP%3C/text%3E%3C/svg%3E"
+    />
+    <!-- Vue 3 CDN（生产版） -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  </head>
+  <body>
+    <div id="app" v-cloak>
+      <header class="app-header">
+        <h1>积分奖励系统</h1>
+        <div id="summary-bar">
+          <span>角色数量：{{ roles.length }}</span>
+          <span>总积分：{{ totalPoints }}</span>
+          <span class="today">今天：{{ today }}</span>
+          <button style="margin-left:12px" @click="toggleTheme">切换主题（{{ themeLabel }}）</button>
+          <button style="margin-left:8px" @click="exportData">导出数据</button>
+          <button style="margin-left:4px" @click="openImportModal">导入数据</button>
+        </div>
+      </header>
+      <aside class="sidebar">
+        <button :class="{active: activeTab==='roles'}" @click="activeTab='roles'">角色</button>
+        <button :class="{active: activeTab==='tasks'}" @click="activeTab='tasks'">任务</button>
+        <button :class="{active: activeTab==='rewards'}" @click="activeTab='rewards'">奖励</button>
+        <button :class="{active: activeTab==='calendar'}" @click="activeTab='calendar'">日历</button>
+      </aside>
+
+      <main class="content">
+        <!-- 角色页签 -->
+        <section v-show="activeTab==='roles'">
+          <div class="section-header">
+            <h2>角色管理</h2>
+          </div>
+          <div class="row">
+            <input v-model.trim="newRoleName.v" placeholder="角色名称" />
+            <button @click="addRole">添加角色</button>
+          </div>
+          <div class="cards">
+            <div v-for="role                                                                                                                                                                                                                                                                                                                                                                                                                                                                     in roles" :key="role.id" class="card">
+              <div class="card-header">
+                <strong>{{ role.name }}</strong>
+                <span class="muted">积分：{{ role.points }}</span>
+              </div>
+              <div class="card-actions">
+                <button class="danger" @click="deleteRole(role.id)">删除角色</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 任务页签 -->
+        <section v-show="activeTab==='tasks'">
+          <div class="section-header row">
+            <h2>任务定义与统计</h2>
+            <button @click="openAddTaskModal">添加任务</button>
+          </div>
+          <div v-if="roles.length===0" class="empty">请先添加角色</div>
+          <div v-else class="role-columns">
+            <div v-for="role in roles" :key="role.id" class="group">
+              <div class="group-title">
+                <span class="role-chip">{{ role.name[0] }}</span>
+                <strong>{{ role.name }}</strong>
+                <span class="role-points-badge" title="当前积分">{{ role.points }}</span>
+              </div>
+              <div class="cards vertical">
+                <div
+                  v-for="td in taskDefsByRole(role.id)"
+                  :key="td.id"
+                  class="card"
+                  @click="openEditTask(td)"
+                >
+                  <div class="card-header">
+                    <strong>{{ td.title }}</strong>
+                    <span class="points-badge">+{{ td.points }}</span>
+                    <span class="priority-badge" :class="'priority-' + (td.priority || 'medium')">
+                      {{ td.priority==='high'?'高':td.priority==='low'?'低':'中' }}
+                    </span>
+                  </div>
+                  <div class="card-body">
+                    <div class="muted small">
+                      完成次数：{{ taskHistoryStatsReactive(td.id).count }}，
+                      累计积分：{{ taskHistoryStatsReactive(td.id).sumPoints }}
+                    </div>
+                    <div class="muted small" v-if="td.note">{{ td.note }}</div>
+                  </div>
+                  <div class="card-actions">
+                    <button :disabled="isCompletedToday(td.id)" @click.stop="askComplete(td.id)">
+                      {{ isCompletedToday(td.id) ? '已完成' : '完成今天' }}
+                    </button>
+                    <button class="danger" @click.stop="deleteTaskDef(td.id)">删除任务</button>
+                  </div>
+                </div>
+                <div v-if="taskDefsByRole(role.id).length===0" class="empty inline">
+                  该角色暂无任务定义
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 奖励页签 -->
+        <section v-show="activeTab==='rewards'">
+          <div class="section-header row">
+            <h2>奖励列表</h2>
+            <button @click="openAddRewardModal">添加奖励</button>
+          </div>
+          <div v-if="roles.length===0" class="empty">请先添加角色</div>
+          <div v-else class="role-columns">
+            <div v-for="role in roles" :key="role.id" class="group">
+              <div class="group-title">
+                <span class="role-chip">{{ role.name[0] }}</span>
+                <strong>{{ role.name }}</strong>
+                <span class="role-points-badge" title="当前积分">{{ role.points }}</span>
+              </div>
+              <div class="cards vertical">
+                <div v-for="rw in rewardsByRole(role.id)" :key="rw.id" class="card">
+                  <div class="card-header">
+                    <strong>{{ rw.title }}</strong>
+                    <span class="cost-badge">需要 {{ rw.cost }}</span>
+                  </div>
+                  <div class="card-body">
+                    <div class="progress">
+                      <div
+                        class="progress-bar"
+                        :style="{width: Math.min(100, Math.round((role.points / rw.cost) * 100)) + '%'}"
+                      ></div>
+                    </div>
+                    <div class="muted small">
+                      已兑换次数：{{ rw.redeemedCount || 0 }}
+                    </div>
+                    <div class="muted small" v-if="rw.note">{{ rw.note }}</div>
+                  </div>
+                  <div class="card-actions">
+                    <button @click="askRedeem(rw.id)">
+                      兑换
+                    </button>
+                    <span class="muted small" v-if="role.points < rw.cost">积分不足</span>
+                  </div>
+                </div>
+                <div v-if="rewardsByRole(role.id).length===0" class="empty inline">
+                  该角色暂无奖励
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 日历页签 -->
+        <section v-show="activeTab==='calendar'">
+          <div class="section-header row">
+            <h2>月历统计</h2>
+            <div class="row">
+              <button @click="prevMonth">上一月</button>
+              <button @click="goToday">今天</button>
+              <button @click="nextMonth">下一月</button>
+            </div>
+          </div>
+          <div class="muted small">当前月份：{{ calendar.title }}</div>
+
+          <div class="calendar-grid">
+            <div class="calendar-header">日</div>
+            <div class="calendar-header">一</div>
+            <div class="calendar-header">二</div>
+            <div class="calendar-header">三</div>
+            <div class="calendar-header">四</div>
+            <div class="calendar-header">五</div>
+            <div class="calendar-header">六</div>
+            <div
+              v-for="cell in calendar.cells"
+              :key="cell.key"
+              class="calendar-cell"
+              :class="{outside: cell.outside, today: cell.isToday}"
+              @click="openDaily(cell.dateStr)"
+              title="点击查看每日详情"
+            >
+              <div class="date">{{ cell.day }}</div>
+              <div class="badge">
+                {{ cell.stats.completed }}/{{ cell.stats.points }}
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <!-- 统一确认弹窗（用于兑换/完成/删除） -->
+      <div class="modal modal-confirm" v-if="confirm && confirm.show">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h3>{{ confirm.title }}</h3>
+            <button class="icon" @click="cancelConfirm">✕</button>
+          </div>
+          <div class="modal-body">
+            <div class="row">
+              <div class="empty inline" style="border-style: solid;">
+                {{ confirm.message }}
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button @click="confirmAction">确定</button>
+            <button class="secondary" @click="cancelConfirm">取消</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 导入数据弹窗 -->
+      <div class="modal" v-if="modals.importData">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h3>导入数据</h3>
+            <button class="icon" @click="modals.importData=false">✕</button>
+          </div>
+          <div class="modal-body">
+            <div class="row">
+              <label>选择文件</label>
+              <input type="file" accept="application/json" @change="onImportFileChange" />
+            </div>
+            <div class="row">
+              <label>或粘贴JSON</label>
+              <textarea v-model="importForm.text" placeholder='{"roles":[],"taskDefs":[],"dailyTasks":{},"rewards":[]}'></textarea>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button @click="submitImport">导入</button>
+            <button class="secondary" @click="modals.importData=false">取消</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 顶部提示条 -->
+      <div v-if="notice.show" class="notice-bar">{{ notice.text }}</div>
+
+      <!-- 添加任务弹窗 -->
+      <div class="modal" v-if="modals.addTask">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h3>添加任务</h3>
+            <button class="icon" @click="modals.addTask=false">✕</button>
+          </div>
+          <div class="modal-body">
+            <div class="row">
+              <label>角色</label>
+              <select v-model="taskForm.roleId">
+                <option disabled value="">请选择角色</option>
+                <option v-for="r in roles" :value="r.id" :key="r.id">{{ r.name }}</option>
+              </select>
+            </div>
+            <div class="row">
+              <label>标题</label>
+              <input v-model.trim="taskForm.title" placeholder="任务标题" />
+            </div>
+            <div class="row">
+              <label>积分</label>
+              <input v-model.number="taskForm.points" type="number" min="1" />
+            </div>
+            <div class="row">
+              <label>备注</label>
+              <textarea v-model.trim="taskForm.note" placeholder="备注（可选）"></textarea>
+            </div>
+            <div class="row">
+              <label>重复频率</label>
+              <div style="display:flex;gap:12px;">
+                <label><input type="radio" value="daily" v-model="taskForm.repeatType" /> 每日</label>
+                <label><input type="radio" value="weekly" v-model="taskForm.repeatType" /> 每周</label>
+              </div>
+            </div>
+            <div class="row" v-if="taskForm.repeatType==='weekly'">
+              <label>每周几</label>
+              <div style="display:flex;flex-wrap:wrap;gap:8px;">
+                <label><input type="checkbox" :value="0" v-model="taskForm.repeatDays" /> 周日</label>
+                <label><input type="checkbox" :value="1" v-model="taskForm.repeatDays" /> 周一</label>
+                <label><input type="checkbox" :value="2" v-model="taskForm.repeatDays" /> 周二</label>
+                <label><input type="checkbox" :value="3" v-model="taskForm.repeatDays" /> 周三</label>
+                <label><input type="checkbox" :value="4" v-model="taskForm.repeatDays" /> 周四</label>
+                <label><input type="checkbox" :value="5" v-model="taskForm.repeatDays" /> 周五</label>
+                <label><input type="checkbox" :value="6" v-model="taskForm.repeatDays" /> 周六</label>
+              </div>
+            </div>
+            <div class="row">
+              <label>截止日期</label>
+              <input type="date" v-model="taskForm.repeatUntil" />
+            </div>
+            <div class="row">
+              <label>优先级</label>
+              <select v-model="taskForm.priority">
+                <option value="high">高</option>
+                <option value="medium">中</option>
+                <option value="low">低</option>
+              </select>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button @click="submitTask">确定</button>
+            <button class="secondary" @click="modals.addTask=false">取消</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 添加奖励弹窗 -->
+      <div class="modal" v-if="modals.addReward">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h3>添加奖励</h3>
+            <button class="icon" @click="modals.addReward=false">✕</button>
+          </div>
+          <div class="modal-body">
+            <div class="row">
+              <label>角色</label>
+              <select v-model="rewardForm.roleId">
+                <option disabled value="">请选择角色</option>
+                <option v-for="r in roles" :value="r.id" :key="r.id">{{ r.name }}</option>
+              </select>
+            </div>
+            <div class="row">
+              <label>标题</label>
+              <input v-model.trim="rewardForm.title" placeholder="奖励标题" />
+            </div>
+            <div class="row">
+              <label>所需积分</label>
+              <input v-model.number="rewardForm.cost" type="number" min="1" />
+            </div>
+            <div class="row">
+              <label>备注</label>
+              <textarea v-model.trim="rewardForm.note" placeholder="备注（可选）"></textarea>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button @click="submitReward">确定</button>
+            <button class="secondary" @click="modals.addReward=false">取消</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>
+
