@@ -1,0 +1,10 @@
+{
+  "name": "taskvuecalender",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "serve": "npx --yes http-server -p 8000 -c-1",
+    "build": "node scripts/build.js"
+  }
+}

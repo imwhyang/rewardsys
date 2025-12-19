@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<!--
+  文件: daily.html
+  描述: 每日详情子页面，展示指定日期每个角色的任务列表，并支持完成/删除。
+-->
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>每日详情 - 积分奖励系统</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  </head>
+  <body>
+    <div id="daily-app" v-cloak class="content">
+      <div class="section-header">
+        <h2>每日详情（{{ dateStr }}）</h2>
+        <div class="row">
+          <button @click="goIndex">返回首页</button>
+        </div>
+      </div>
+      <div class="row muted">
+        <span>当日完成数量：{{ dayStats.completed }}</span>
+        <span>当日积分：{{ dayStats.points }}</span>
+        <button style="margin-left:auto" @click="toggleTheme">切换主题（{{ themeLabel }}）</button>
+      </div>
+
+      <div v-if="roles.length===0" class="empty">暂无角色，请返回首页添加</div>
+      <div v-else class="role-columns">
+        <div v-for="group in grouped" :key="group.role.id" class="group">
+          <div class="group-title">
+            <span class="role-chip">{{ group.role.name[0] }}</span>
+            <strong>{{ group.role.name }}</strong>
+            <span class="role-points-badge" title="当前总积分">{{ group.role.points }}</span>
+          </div>
+          <div class="cards vertical">
+            <div v-for="item in group.items" :key="item.taskDefId" class="card">
+              <div class="card-header">
+                <strong>{{ item.title }}</strong>
+                <span class="points-badge">+{{ item.points }}</span>
+                <span class="muted small" v-if="item.note">{{ item.note }}</span>
+              </div>
+              <div class="card-actions">
+                <button :disabled="item.completed" @click="askComplete(item.taskDefId)">
+                  {{ item.completed ? '已完成' : '完成今天' }}
+                </button>
+                <button class="danger" @click="deleteItem(item.taskDefId)">删除（仅当天）</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 完成任务确认弹窗 -->
+      <div class="modal" v-if="modals.complete">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h3>确认完成今日任务</h3>
+            <button class="icon" @click="modals.complete=false">✕</button>
+          </div>
+          <div class="modal-body">
+            <div class="row">
+              <div class="empty inline" style="border-style: solid;">
+                将记录该任务今日完成并为角色增加积分。是否确认？
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button @click="confirmComplete">确定</button>
+            <button class="secondary" @click="modals.complete=false">取消</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 统一确认弹窗（每日页：删除当日任务等） -->
+      <div class="modal" v-if="confirm && confirm.show">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h3>{{ confirm.title }}</h3>
+            <button class="icon" @click="cancelConfirm">✕</button>
+          </div>
+          <div class="modal-body">
+            <div class="row">
+              <div class="empty inline" style="border-style: solid;">
+                {{ confirm.message }}
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button @click="confirmAction">确定</button>
+            <button class="secondary" @click="cancelConfirm">取消</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 顶部提示条 -->
+      <div v-if="notice.show" class="notice-bar">{{ notice.text }}</div>
+    </div>
+
+    <script src="./daily.js"></script>
+  </body>
+</html>
+
